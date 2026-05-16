@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useRef } from 'react'
+import { useSession } from 'next-auth/react'
 import { Navbar } from '@/components/Navbar'
 
 const CELL = 28
@@ -33,21 +34,18 @@ function PixelCanvas() {
     litRef.current.forEach((idx) => {
       const cx = idx % colsRef.current
       const cy = Math.floor(idx / colsRef.current)
-      const opacity = idx % 3 === 0 ? '28' : idx % 3 === 1 ? '32' : '22'
-      ctx.fillStyle = COLOR + opacity
+      const op = idx % 3 === 0 ? '28' : idx % 3 === 1 ? '32' : '22'
+      ctx.fillStyle = COLOR + op
       ctx.fillRect(cx * CELL + 1, cy * CELL + 1, CELL - 1, CELL - 1)
     })
   }, [])
 
   const seed = useCallback(() => {
     if (seededRef.current) return
-    const total = colsRef.current * rowsRef.current
-    if (total === 0) return
+    if (colsRef.current * rowsRef.current === 0) return
     seededRef.current = true
-    const ccS = Math.floor(colsRef.current * 0.3)
-    const ccE = Math.floor(colsRef.current * 0.7)
-    const crS = Math.floor(rowsRef.current * 0.15)
-    const crE = Math.floor(rowsRef.current * 0.75)
+    const ccS = Math.floor(colsRef.current * 0.3), ccE = Math.floor(colsRef.current * 0.7)
+    const crS = Math.floor(rowsRef.current * 0.15), crE = Math.floor(rowsRef.current * 0.75)
     let attempts = 0
     while (litRef.current.size < SEED_COUNT && attempts < 500) {
       attempts++
@@ -80,10 +78,10 @@ function PixelCanvas() {
     const canvas = canvasRef.current
     if (!canvas) return -1
     const rect = canvas.getBoundingClientRect()
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
-    const cx = Math.floor((clientX - rect.left) / CELL)
-    const cy = Math.floor((clientY - rect.top) / CELL)
+    const cx_v = 'touches' in e ? e.touches[0].clientX : e.clientX
+    const cy_v = 'touches' in e ? e.touches[0].clientY : e.clientY
+    const cx = Math.floor((cx_v - rect.left) / CELL)
+    const cy = Math.floor((cy_v - rect.top) / CELL)
     if (cx < 0 || cy < 0 || cx >= colsRef.current || cy >= rowsRef.current) return -1
     return cy * colsRef.current + cx
   }
@@ -99,8 +97,7 @@ function PixelCanvas() {
     if (!isDrawing.current) return
     const idx = cellFromEvent(e)
     if (idx < 0 || litRef.current.has(idx)) return
-    litRef.current.add(idx)
-    draw()
+    litRef.current.add(idx); draw()
   }
 
   return (
@@ -123,44 +120,43 @@ const features = [
   {
     id: 'manual', num: '01', title: 'Manual Editor',
     desc: 'Blank canvas. Full tools. Pencil, fill, eyedropper, undo history, clean exports.',
-    cta: 'Open Editor', href: '/create',
-    accent: '#6c63ff', accentDim: 'rgba(108,99,255,0.12)',
+    cta: 'Open Editor', href: '/create', accent: '#6c63ff', accentDim: 'rgba(108,99,255,0.12)',
     preview: ['#6c63ff','#4a3f99','#6c63ff','#9b8cff','#6c63ff','#4a3f99','#9b8cff','#6c63ff','#4a3f99'],
   },
   {
     id: 'convert', num: '02', title: 'Image → Pixel',
     desc: '128×128, 64-color palette. Nearest-neighbour downscaling. No blurry mosaic filters.',
-    cta: 'Convert Image', href: '/generate/from-image',
-    accent: '#ff6b35', accentDim: 'rgba(255,107,53,0.12)',
+    cta: 'Convert Image', href: '/generate/from-image', accent: '#ff6b35', accentDim: 'rgba(255,107,53,0.12)',
     preview: ['#ff6b35','#cc4a1a','#ff6b35','#ff9a6c','#ff6b35','#cc4a1a','#ff9a6c','#ff6b35','#cc4a1a'],
   },
   {
     id: 'avatar', num: '03', title: 'Pixel Avatar',
     desc: 'Upload your face. Walk out as a game character. Accessories, outfits, your vibe.',
-    cta: 'Build Avatar', href: '/avatar',
-    accent: '#00d4aa', accentDim: 'rgba(0,212,170,0.12)',
+    cta: 'Build Avatar', href: '/avatar', accent: '#00d4aa', accentDim: 'rgba(0,212,170,0.12)',
     preview: ['#00d4aa','#007a5e','#00d4aa','#00a882','#00d4aa','#007a5e','#00a882','#00d4aa','#007a5e'],
   },
 ]
 
 const _ = '#0d0d1a', A = '#6c63ff', B = '#4a3f99', C = '#c4bfff', S = '#f5c5a3', H = '#3a2510'
 const pixelPreview = [
-  _,_,_,_,H,H,H,H,_,_,_,_,
   _,_,_,H,H,H,H,H,H,_,_,_,
-  _,_,H,H,S,S,S,S,H,H,_,_,
-  _,H,H,S,S,S,S,S,S,H,H,_,
-  _,H,S,S,B,S,S,B,S,S,H,_,
-  H,H,S,B,B,S,S,B,B,S,H,H,
-  H,H,S,S,S,S,S,S,S,S,H,H,
-  H,H,S,S,C,S,S,C,S,S,H,H,
-  _,H,S,S,S,A,A,S,S,S,H,_,
-  _,H,H,S,S,S,S,S,S,H,H,_,
   _,_,H,H,H,H,H,H,H,H,_,_,
-  _,_,_,A,A,_,_,A,A,_,_,_,
+  _,H,H,H,S,S,S,S,H,H,H,_,
+  _,H,S,S,S,S,S,S,S,S,H,_,
+  _,H,S,B,B,S,S,B,B,S,H,_,
+  _,H,S,A,B,S,S,B,A,S,H,_,
+  _,H,S,S,S,S,S,S,S,S,H,_,
+  _,H,S,S,C,S,S,C,S,S,H,_,
+  _,H,S,S,S,A,A,S,S,S,H,_,
+  _,_,H,S,S,S,S,S,S,H,_,_,
+  _,_,_,H,H,H,H,H,H,_,_,_,
+  _,_,_,_,A,A,A,A,_,_,_,_,
 ]
 
-
 export default function Home() {
+  const { data: session, status } = useSession()
+  const isLoggedIn = status === 'authenticated'
+
   return (
     <main className="min-h-screen bg-[#07070d] text-white relative overflow-x-hidden">
       <PixelCanvas />
@@ -175,27 +171,48 @@ export default function Home() {
             pixel art, your way
           </span>
         </div>
+
         <h1 style={{ fontFamily: "'Press Start 2P', monospace" }}
           className="text-[24px] sm:text-[34px] md:text-[48px] leading-[1.65] text-[#f0f0fa] mb-7">
           turn anything<br />into <span className="text-[#6c63ff]">pixel art.</span>
         </h1>
+
         <p style={{ fontFamily: "'JetBrains Mono', monospace" }}
           className="text-[12px] md:text-[14px] text-white/35 max-w-lg mx-auto leading-loose mb-10">
           draw it. convert it. become it.<br className="hidden sm:block" />
           real tools. real pixel art. actually yours.
         </p>
+
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
-          <Link href="/register"
-            className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-[#6c63ff] hover:bg-[#7b73ff] text-[12px] font-semibold transition-all shadow-[0_0_48px_rgba(108,99,255,0.3)] hover:shadow-[0_0_64px_rgba(108,99,255,0.45)]"
-            style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-            Start Creating →
-          </Link>
-          <Link href="/generate/from-image"
-            className="w-full sm:w-auto px-8 py-3.5 rounded-xl border border-white/[0.08] hover:border-white/[0.15] bg-white/[0.03] hover:bg-white/[0.05] text-[12px] text-white/45 hover:text-white/70 transition-all"
-            style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-            Try Image Conversion
-          </Link>
+          {isLoggedIn ? (
+            <>
+              <Link href="/create"
+                className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-[#6c63ff] hover:bg-[#7b73ff] text-[12px] font-semibold transition-all shadow-[0_0_48px_rgba(108,99,255,0.3)]"
+                style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                Start Creating →
+              </Link>
+              <Link href="/generate/from-image"
+                className="w-full sm:w-auto px-8 py-3.5 rounded-xl border border-white/[0.08] hover:border-white/[0.15] bg-white/[0.03] text-[12px] text-white/45 hover:text-white/70 transition-all"
+                style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                Try Image conversion
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/register"
+                className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-[#6c63ff] hover:bg-[#7b73ff] text-[12px] font-semibold transition-all shadow-[0_0_48px_rgba(108,99,255,0.3)]"
+                style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                start creating →
+              </Link>
+              <Link href="/generate/from-image"
+                className="w-full sm:w-auto px-8 py-3.5 rounded-xl border border-white/[0.08] hover:border-white/[0.15] bg-white/[0.03] text-[12px] text-white/45 hover:text-white/70 transition-all"
+                style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                try image conversion
+              </Link>
+            </>
+          )}
         </div>
+
         <p style={{ fontFamily: "'JetBrains Mono', monospace" }} className="text-[10px] text-white/15 tracking-widest">
           ↑ the background is a canvas. click it.
         </p>
@@ -211,18 +228,14 @@ export default function Home() {
             >
               <div className="absolute top-0 inset-x-0 h-[2px]" style={{ background: f.accent }} />
               <div className="grid grid-cols-3 gap-[2px] w-9 h-9 mb-5">
-                {f.preview.map((c, i) => (
-                  <div key={i} style={{ background: c, opacity: 0.55 + (i % 3) * 0.15, borderRadius: '1px' }} />
-                ))}
+                {f.preview.map((c, i) => <div key={i} style={{ background: c, opacity: 0.55 + (i % 3) * 0.15, borderRadius: '1px' }} />)}
               </div>
               <div className="flex items-start justify-between mb-3">
                 <h3 style={{ fontFamily: "'Syne', sans-serif" }} className="text-[17px] font-black text-[#f0f0fa]">{f.title}</h3>
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", color: f.accent }} className="text-[10px] opacity-50 mt-0.5">{f.num}</span>
               </div>
               <p style={{ fontFamily: "'JetBrains Mono', monospace" }} className="text-[11px] text-white/30 leading-relaxed mb-6">{f.desc}</p>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: f.accent }} className="text-[11px] flex items-center gap-1.5 group-hover:gap-3 transition-all duration-200">
-                {f.cta} →
-              </span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: f.accent }} className="text-[11px] flex items-center gap-1.5 group-hover:gap-3 transition-all">{f.cta} →</span>
             </Link>
           ))}
         </div>
@@ -237,7 +250,7 @@ export default function Home() {
                 real pixel art.<br />not blurry grids.
               </h2>
               <p style={{ fontFamily: "'JetBrains Mono', monospace" }} className="text-[12px] text-white/30 leading-loose">
-                most tools slap a mosaic filter and call it pixel art. we do actual palette reduction, grid-snapping, and nearest-neighbour downscaling — output that looks like it came from a game, not a photo editor.
+                most tools slap a mosaic filter and call it pixel art. we do actual palette reduction, grid-snapping, and nearest-neighbour downscaling — output that looks like it came from a game.
               </p>
             </div>
             <div className="p-8 md:p-14 flex items-center justify-center bg-[#0a0a13]">
@@ -272,10 +285,10 @@ export default function Home() {
           <p style={{ fontFamily: "'JetBrains Mono', monospace" }} className="relative z-10 text-[12px] text-white/25 leading-loose mb-8 max-w-sm mx-auto">
             free to start. no credit card. just open the canvas and go.
           </p>
-          <Link href="/register"
+          <Link href={isLoggedIn ? '/create' : '/register'}
             className="relative z-10 inline-flex px-8 py-3.5 rounded-xl bg-[#6c63ff] hover:bg-[#7b73ff] text-[12px] font-semibold transition-all shadow-[0_0_48px_rgba(108,99,255,0.3)]"
             style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-            Create Your Account
+            {isLoggedIn ? 'open your canvas' : 'create your account'}
           </Link>
         </div>
       </section>

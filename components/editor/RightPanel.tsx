@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useEditorStore } from '@/store/editorStore'
 import { generateShades } from '@/utils/colorUtils'
 
@@ -12,18 +12,23 @@ const BASE_COLORS = [
 
 export default function RightPanel() {
   const { color, setColor, canvasWidth, canvasHeight, setCanvasSize, scale } = useEditorStore()
-  const [hoverBase, setHoverBase] = useState<string | null>(null)
-  const [shades, setShades] = useState<string[]>([])
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const openShades = (base: string) => {
-    if (closeTimer.current) clearTimeout(closeTimer.current)
-    setHoverBase(base)
-    setShades(generateShades(base, 7))
+  const [pinnedBase, setPinnedBase] = useState<string | null>(null)
+  const [shades, setShades] = useState<string[]>([])
+
+  const handleBaseClick = (base: string) => {
+    setColor(base)
+    if (pinnedBase === base) {
+      setPinnedBase(null)
+      setShades([])
+    } else {
+      setPinnedBase(base)
+      setShades(generateShades(base, 8))
+    }
   }
 
-  const scheduleClose = () => {
-    closeTimer.current = setTimeout(() => { setHoverBase(null); setShades([]) }, 150)
+  const handleShadeClick = (shade: string) => {
+    setColor(shade)
   }
 
   return (
@@ -34,16 +39,21 @@ export default function RightPanel() {
       <div className="p-4 border-b border-white/[0.06]">
         <Label>color</Label>
         <div className="flex items-center gap-2 mt-2">
-          <div className="w-10 h-10 rounded-lg border border-white/10 flex-shrink-0" style={{ background: color }} />
-          <div className="flex-1">
+          <div
+            className="w-10 h-10 rounded-lg border border-white/10 flex-shrink-0"
+            style={{ background: color }}
+          />
+          <div className="flex-1 min-w-0">
             <input
               type="color"
               value={color}
               onChange={(e) => setColor(e.target.value)}
               className="w-full h-7 rounded cursor-pointer bg-transparent border-0 p-0"
-              style={{ appearance: 'none' }}
             />
-            <p className="text-[9px] text-white/25 mt-0.5" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+            <p
+              className="text-[9px] text-white/25 mt-0.5 truncate"
+              style={{ fontFamily: "'JetBrains Mono', monospace" }}
+            >
               {color.toUpperCase()}
             </p>
           </div>
@@ -51,43 +61,57 @@ export default function RightPanel() {
       </div>
 
       <div className="p-4 border-b border-white/[0.06]">
-        <Label>palette</Label>
-        <div className="grid grid-cols-4 gap-1.5 mt-2 relative">
+        <Label>palette <span className="text-white/15 normal-case">(click to pin shades)</span></Label>
+
+        <div className="grid grid-cols-4 gap-1.5 mt-2">
           {BASE_COLORS.map((base) => (
-            <div key={base} className="relative"
-              onMouseEnter={() => openShades(base)}
-              onMouseLeave={scheduleClose}
-            >
-              <button
-                onClick={() => setColor(base)}
-                className="w-full aspect-square rounded-md transition-transform hover:scale-110"
-                style={{
-                  background: base,
-                  outline: color === base ? '2px solid rgba(108,99,255,0.8)' : 'none',
-                  outlineOffset: 1,
-                }}
-                title={base}
-              />
-            </div>
+            <button
+              key={base}
+              onClick={() => handleBaseClick(base)}
+              className="w-full aspect-square rounded-md transition-all"
+              style={{
+                background: base,
+                outline: (color === base || pinnedBase === base)
+                  ? '2px solid rgba(108,99,255,0.85)'
+                  : color.toLowerCase() === base.toLowerCase()
+                  ? '2px solid rgba(255,255,255,0.5)'
+                  : 'none',
+                outlineOffset: 1,
+                transform: pinnedBase === base ? 'scale(1.12)' : 'scale(1)',
+              }}
+              title={base}
+            />
           ))}
         </div>
 
-        {hoverBase && shades.length > 0 && (
+        {pinnedBase && shades.length > 0 && (
           <div
-            className="flex gap-1 mt-2 p-1.5 rounded-lg"
-            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
-            onMouseEnter={() => { if (closeTimer.current) clearTimeout(closeTimer.current) }}
-            onMouseLeave={scheduleClose}
+            className="mt-3 p-2 rounded-xl flex flex-col gap-2"
+            style={{
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.07)',
+            }}
           >
-            {shades.map((s) => (
-              <button
-                key={s}
-                onClick={() => { setColor(s); setHoverBase(null); setShades([]) }}
-                className="flex-1 h-5 rounded transition-transform hover:scale-110"
-                style={{ background: s, outline: color === s ? '1px solid rgba(108,99,255,0.8)' : 'none' }}
-                title={s}
-              />
-            ))}
+            <p className="text-[9px] text-white/20" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+              shades of {pinnedBase}
+            </p>
+            <div className="flex gap-1">
+              {shades.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => handleShadeClick(s)}
+                  className="flex-1 rounded transition-all"
+                  style={{
+                    background: s,
+                    height: 20,
+                    outline: color === s ? '2px solid rgba(108,99,255,0.85)' : 'none',
+                    outlineOffset: 1,
+                    transform: color === s ? 'scaleY(1.2)' : 'scaleY(1)',
+                  }}
+                  title={s}
+                />
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -105,7 +129,10 @@ export default function RightPanel() {
             onChange={(v) => setCanvasSize(canvasWidth, v)}
           />
         </div>
-        <p className="text-[9px] text-white/20 mt-1.5" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+        <p
+          className="text-[9px] text-white/20 mt-1.5"
+          style={{ fontFamily: "'JetBrains Mono', monospace" }}
+        >
           scale: {scale}px/cell
         </p>
       </div>
@@ -115,8 +142,21 @@ export default function RightPanel() {
         <div className="mt-2 flex flex-col gap-1.5">
           {shortcuts.map(([key, action]) => (
             <div key={key} className="flex items-center justify-between">
-              <span className="text-[9px] text-white/20" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{action}</span>
-              <kbd className="text-[8px] text-white/30 px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.06)', fontFamily: "'JetBrains Mono', monospace" }}>{key}</kbd>
+              <span
+                className="text-[9px] text-white/20"
+                style={{ fontFamily: "'JetBrains Mono', monospace" }}
+              >
+                {action}
+              </span>
+              <kbd
+                className="text-[8px] text-white/35 px-1.5 py-0.5 rounded"
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  fontFamily: "'JetBrains Mono', monospace",
+                }}
+              >
+                {key}
+              </kbd>
             </div>
           ))}
         </div>
@@ -127,7 +167,10 @@ export default function RightPanel() {
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-[9px] text-white/25 uppercase tracking-widest" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+    <p
+      className="text-[9px] text-white/25 uppercase tracking-widest"
+      style={{ fontFamily: "'JetBrains Mono', monospace" }}
+    >
       {children}
     </p>
   )
@@ -138,7 +181,8 @@ function SizeInput({ value, onChange }: { value: number; onChange: (v: number) =
     <input
       type="number"
       value={value}
-      min={4} max={256}
+      min={4}
+      max={256}
       onChange={(e) => onChange(Math.max(4, Math.min(256, Number(e.target.value) || 32)))}
       className="w-full text-center text-[11px] text-white/60 rounded-lg px-1 py-1.5 outline-none"
       style={{
@@ -159,4 +203,5 @@ const shortcuts = [
   ['Ctrl+Y', 'redo'],
   ['+', 'zoom in'],
   ['-', 'zoom out'],
+  ['G', 'grid'],
 ]

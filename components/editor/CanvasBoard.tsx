@@ -19,6 +19,7 @@ interface Props {
   currentColor?: string
   tool?: string
   showGrid?: boolean
+  initialGrid?: (string | null)[] | null   
   onEyedrop?: (color: string) => void
   onDirty?: () => void
 }
@@ -28,10 +29,12 @@ const MAX_HISTORY = 50
 const CanvasBoard = forwardRef<CanvasRef, Props>(function CanvasBoard({
   width = 32, height = 32, scale = 14,
   currentColor = '#6c63ff', tool = 'pencil',
-  showGrid = true, onEyedrop, onDirty,
+  showGrid = true, initialGrid = null,
+  onEyedrop, onDirty,
 }, ref) {
 
   const initGrid = (): (string | null)[] => {
+    if (initialGrid && initialGrid.length === width * height) return initialGrid.slice()
     if (typeof window === 'undefined') return new Array(width * height).fill(null)
     try {
       const saved = localStorage.getItem('pixelit_canvas_v2')
@@ -51,19 +54,22 @@ const CanvasBoard = forwardRef<CanvasRef, Props>(function CanvasBoard({
   const futureRef = useRef<(string | null)[][]>([])
 
   useImperativeHandle(ref, () => ({
-    exportPNG, clearGrid, getThumbnail, undo: applyUndo, redo: applyRedo,
+    exportPNG, clearGrid, getThumbnail,
+    undo: applyUndo, redo: applyRedo,
     loadGrid: ({ width: w, height: h, grid: g }) => {
       if (w === width && h === height) setGrid(g.slice())
     },
     getGrid: () => ({ width, height, grid }),
   }))
 
-  useEffect(() => { drawCanvas() }, [grid, scale, showGrid])
+  useEffect(() => { drawCanvas() }, [grid, scale, showGrid, width, height])
 
   useEffect(() => {
     const id = setTimeout(() => {
       if (typeof window === 'undefined') return
-      try { localStorage.setItem('pixelit_canvas_v2', JSON.stringify({ width, height, grid })) } catch { /* ignore */ }
+      try {
+        localStorage.setItem('pixelit_canvas_v2', JSON.stringify({ width, height, grid }))
+      } catch { /* ignore */ }
     }, 600)
     return () => clearTimeout(id)
   }, [grid, width, height])
@@ -86,8 +92,12 @@ const CanvasBoard = forwardRef<CanvasRef, Props>(function CanvasBoard({
     }
     if (showGrid && scale >= 6) {
       ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 1
-      for (let x = 0; x <= width; x++) { ctx.beginPath(); ctx.moveTo(x * scale + 0.5, 0); ctx.lineTo(x * scale + 0.5, bh); ctx.stroke() }
-      for (let y = 0; y <= height; y++) { ctx.beginPath(); ctx.moveTo(0, y * scale + 0.5); ctx.lineTo(bw, y * scale + 0.5); ctx.stroke() }
+      for (let x = 0; x <= width; x++) {
+        ctx.beginPath(); ctx.moveTo(x * scale + 0.5, 0); ctx.lineTo(x * scale + 0.5, bh); ctx.stroke()
+      }
+      for (let y = 0; y <= height; y++) {
+        ctx.beginPath(); ctx.moveTo(0, y * scale + 0.5); ctx.lineTo(bw, y * scale + 0.5); ctx.stroke()
+      }
     }
   }
 
@@ -119,19 +129,18 @@ const CanvasBoard = forwardRef<CanvasRef, Props>(function CanvasBoard({
     setGrid(prev => { pastRef.current.push(prev.slice()); return next })
   }
 
-  function setPixel(x: number, y: number, color: string | null) {
-    if (x < 0 || y < 0 || x >= width || y >= height) return
-    const idx = y * width + x
-    setGrid(prev => { if (prev[idx] === color) return prev; const c = prev.slice(); c[idx] = color; return c })
-    onDirty?.()
-  }
-
   function applyStroke(x: number, y: number, color: string | null) {
+    if (x < 0 || y < 0 || x >= width || y >= height) return
     if (!drawingRef.current.started) {
       setGrid(prev => { pushHistory(prev.slice()); return prev })
       drawingRef.current.started = true
     }
-    setPixel(x, y, color)
+    const idx = y * width + x
+    setGrid(prev => {
+      if (prev[idx] === color) return prev
+      const c = prev.slice(); c[idx] = color; return c
+    })
+    onDirty?.()
   }
 
   function floodFill(x: number, y: number, replacement: string) {
@@ -179,8 +188,7 @@ const CanvasBoard = forwardRef<CanvasRef, Props>(function CanvasBoard({
     canvasRef.current?.toBlob(blob => {
       if (!blob) return
       const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url; a.download = 'pixelit.png'; a.click()
+      const a = document.createElement('a'); a.href = url; a.download = 'pixelit.png'; a.click()
       URL.revokeObjectURL(url)
     })
   }
@@ -190,7 +198,10 @@ const CanvasBoard = forwardRef<CanvasRef, Props>(function CanvasBoard({
     t.width = width; t.height = height
     const ctx = t.getContext('2d')!
     ctx.fillStyle = '#111118'; ctx.fillRect(0, 0, width, height)
-    grid.forEach((c, i) => { if (!c) return; ctx.fillStyle = c; ctx.fillRect(i % width, Math.floor(i / width), 1, 1) })
+    grid.forEach((c, i) => {
+      if (!c) return; ctx.fillStyle = c
+      ctx.fillRect(i % width, Math.floor(i / width), 1, 1)
+    })
     return t.toDataURL('image/png')
   }
 
@@ -201,10 +212,13 @@ const CanvasBoard = forwardRef<CanvasRef, Props>(function CanvasBoard({
   }
 
   return (
-    <div className="flex items-center justify-center w-full h-full overflow-auto" style={{ background: '#0a0a12' }}>
+    <div
+      className="flex items-center justify-center w-full h-full overflow-auto"
+      style={{ background: '#0a0a12' }}
+    >
       <canvas
         ref={canvasRef}
-        style={{ imageRendering: 'pixelated', cursor: tool === 'eyedropper' ? 'crosshair' : 'crosshair', touchAction: 'none', borderRadius: 2 }}
+        style={{ imageRendering: 'pixelated', cursor: 'crosshair', touchAction: 'none', borderRadius: 2 }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

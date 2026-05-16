@@ -7,10 +7,16 @@ export default async function ProjectsPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const projects = await (prisma as any).project.findMany({
-    where: { userId: session.user.id },
-    orderBy: { updatedAt: 'desc' },
-  })
+  let projects = []
+
+  try {
+    projects = await (prisma as any).project.findMany({
+      where: { userId: session.user.id },
+      orderBy: { updatedAt: 'desc' },
+    })
+  } catch (e) {
+    console.error(e)
+  }
 
   return (
     <main className="min-h-screen bg-[#07070d] text-white px-5 md:px-10 py-12 max-w-6xl mx-auto">

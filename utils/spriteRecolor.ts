@@ -1,19 +1,14 @@
-export type KeyColorMap = {
+export type ColorMap = {
   skin: string
   hair: string
   clothes: string
-  accessory?: string
 }
 
-const KEY_COLORS: Record<string, string> = {
-  '#ff8866': 'skin',
-  '#cc6644': 'skinShadow',
-  '#885522': 'hair',
-  '#663311': 'beard',
-  '#334455': 'clothes',
-  '#223344': 'clothesDark',
-  '#777777': 'accessory',
-  '#444444': 'accessoryDark',
+export type AvatarSpec = {
+  gender: 'male' | 'female'
+  hairStyle: number
+  accessory: 'none' | 'glasses' | 'headphones' | 'hat'
+  beard: boolean
 }
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -21,152 +16,179 @@ function hexToRgb(hex: string): [number, number, number] {
   return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff]
 }
 
-function rgbToHex(r: number, g: number, b: number): string {
-  return `#${Math.round(r).toString(16).padStart(2,'0')}${Math.round(g).toString(16).padStart(2,'0')}${Math.round(b).toString(16).padStart(2,'0')}`
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  r /= 255; g /= 255; b /= 255
+  const max = Math.max(r, g, b), min = Math.min(r, g, b)
+  const l = (max + min) / 2
+  if (max === min) return [0, 0, l]
+  const d = max - min
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+  let h: number
+  if (max === r)      h = (g - b) / d + (g < b ? 6 : 0)
+  else if (max === g) h = (b - r) / d + 2
+  else                h = (r - g) / d + 4
+  return [h * 60, s, l]
 }
 
-function colorDist([r1,g1,b1]: number[], [r2,g2,b2]: number[]): number {
-  return (r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  if (s === 0) { const v = Math.round(l * 255); return [v, v, v] }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s
+  const p = 2 * l - q
+  const hk = h / 360
+  const t = [hk + 1/3, hk, hk - 1/3]
+  const rgb = t.map(tk => {
+    if (tk < 0) tk += 1; if (tk > 1) tk -= 1
+    if (tk < 1/6) return p + (q - p) * 6 * tk
+    if (tk < 1/2) return q
+    if (tk < 2/3) return p + (q - p) * (2/3 - tk) * 6
+    return p
+  })
+  return [Math.round(rgb[0] * 255), Math.round(rgb[1] * 255), Math.round(rgb[2] * 255)]
 }
 
-function shadeHex(hex: string, amount: number): string {
-  const [r, g, b] = hexToRgb(hex)
-  return rgbToHex(
-    Math.max(0, Math.min(255, r + amount)),
-    Math.max(0, Math.min(255, g + amount)),
-    Math.max(0, Math.min(255, b + amount)),
-  )
+const BASE = {
+  skin:    rgbToHsl(...hexToRgb('#b59c7a')), 
+  hair:    rgbToHsl(...hexToRgb('#573a28')),   
+  beard:   rgbToHsl(...hexToRgb('#4e3629')),   
+  clothes: rgbToHsl(...hexToRgb('#3f3f41')),   
+  jeans:   rgbToHsl(...hexToRgb('#4b5c7c')),   
 }
 
-function buildColorTable(opts: KeyColorMap): Map<string, [number, number, number]> {
-  const table = new Map<string, [number, number, number]>()
-  const skinD = shadeHex(opts.skin, -35)
-  const hairD = shadeHex(opts.hair, -25)
-  const clothesD = shadeHex(opts.clothes, -35)
-  const accColor = opts.accessory ?? '#666666'
-  const accD = shadeHex(accColor, -40)
+type Zone = 'skin' | 'hair' | 'clothes' | 'jeans' | null
 
-  table.set('#ff8866', hexToRgb(opts.skin))
-  table.set('#cc6644', hexToRgb(skinD))
-  table.set('#885522', hexToRgb(opts.hair))
-  table.set('#663311', hexToRgb(hairD))
-  table.set('#334455', hexToRgb(opts.clothes))
-  table.set('#223344', hexToRgb(clothesD))
-  table.set('#777777', hexToRgb(accColor))
-  table.set('#444444', hexToRgb(accD))
+function detectZone(r: number, g: number, b: number): Zone {
+  const [h, s, l] = rgbToHsl(r, g, b)
 
-  return table
+  if (l < 0.12) return null
+
+  if (l > 0.92) return null
+
+  if (h >= 15 && h <= 55 && s >= 0.18 && l >= 0.45 && l <= 0.92) return 'skin'
+
+  if (h >= 10 && h <= 45 && s >= 0.15 && l >= 0.12 && l < 0.48) return 'hair'
+
+  if (h >= 190 && h <= 250 && s >= 0.15 && l >= 0.25 && l <= 0.60) return 'jeans'
+
+  if (l >= 0.12 && l < 0.40 && s < 0.25) return 'clothes'
+
+  return null
 }
 
-const THRESHOLD = 900  
+function recolorPixel(
+  r: number, g: number, b: number,
+  zone: Zone,
+  colorMap: ColorMap
+): [number, number, number] {
+  if (!zone) return [r, g, b]
 
-export async function renderSprite(
-  canvas: HTMLCanvasElement,
-  spritePaths: string[],         
-  colorMap: KeyColorMap,
-  bgColor: string,
-  size: number                  
-): Promise<void> {
-  canvas.width = size
-  canvas.height = size
-  const ctx = canvas.getContext('2d')!
-  ctx.imageSmoothingEnabled = false
+  const [ph, ps, pl] = rgbToHsl(r, g, b)
 
-  ctx.fillStyle = bgColor
-  ctx.fillRect(0, 0, size, size)
+  let targetHex: string
+  let baseHsl: [number, number, number]
 
-  const table = buildColorTable(colorMap)
-
-  for (const path of spritePaths) {
-    if (!path) continue
-    try {
-      await drawRecoloredLayer(ctx, path, table, size)
-    } catch { /* skip */ }
-  }
-}
-
-async function drawRecoloredLayer(
-  ctx: CanvasRenderingContext2D,
-  src: string,
-  table: Map<string, [number, number, number]>,
-  size: number
-): Promise<void> {
-  const img = await loadImage(src)
-  // draw to offscreen to read pixels
-  const off = document.createElement('canvas')
-  off.width = img.naturalWidth || img.width
-  off.height = img.naturalHeight || img.height
-  const offCtx = off.getContext('2d')!
-  offCtx.drawImage(img, 0, 0)
-
-  const imageData = offCtx.getImageData(0, 0, off.width, off.height)
-  const data = imageData.data
-
-  const keyRgbs = Array.from(table.entries()).map(([hex, rgb]) => ({ hex, rgb }))
-
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] < 10) continue   // transparent — skip
-    const pr: [number,number,number] = [data[i], data[i+1], data[i+2]]
-
-    let best: { hex: string; rgb: [number,number,number] } | null = null
-    let bestDist = THRESHOLD
-
-    for (const { hex, rgb } of keyRgbs) {
-      const d = colorDist(pr, rgb)
-      if (d < bestDist) { bestDist = d; best = { hex, rgb } }
-    }
-
-    if (best) {
-      const replacement = table.get(best.hex)!
-      data[i] = replacement[0]
-      data[i+1] = replacement[1]
-      data[i+2] = replacement[2]
-    }
+  if (zone === 'skin') {
+    targetHex = colorMap.skin
+    baseHsl = BASE.skin
+  } else if (zone === 'hair') {
+    targetHex = colorMap.hair
+    baseHsl = BASE.hair
+  } else if (zone === 'jeans') {
+    const [cr, cg, cb] = hexToRgb(colorMap.clothes)
+    targetHex = `#${Math.min(255,cr+30).toString(16).padStart(2,'0')}${Math.min(255,cg+40).toString(16).padStart(2,'0')}${Math.min(255,cb+70).toString(16).padStart(2,'0')}`
+    baseHsl = BASE.jeans
+  } else {
+    targetHex = colorMap.clothes
+    baseHsl = BASE.clothes
   }
 
-  offCtx.putImageData(imageData, 0, 0)
+  const [th, ts, tl] = rgbToHsl(...hexToRgb(targetHex))
+  const [bh, bs, bl] = baseHsl
 
-  // scale up to canvas size (nearest-neighbour)
-  ctx.imageSmoothingEnabled = false
-  ctx.drawImage(off, 0, 0, size, size)
+  const lDelta = pl - bl
+  const newL = Math.max(0.05, Math.min(0.97, tl + lDelta * 0.9))
+
+  const sRatio = bs > 0 ? ts / bs : 1
+  const newS = Math.max(0, Math.min(1, ps * sRatio * 1.1))
+
+  const [nr, ng, nb] = hslToRgb(th, newS, newL)
+  return [
+    Math.max(0, Math.min(255, nr)),
+    Math.max(0, Math.min(255, ng)),
+    Math.max(0, Math.min(255, nb)),
+  ]
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()
+    img.crossOrigin = 'anonymous'
     img.onload = () => resolve(img)
     img.onerror = reject
-    img.src = src
+    img.src = `${src}?t=${Date.now()}`
   })
 }
 
-export type SpriteOptions = {
-  gender: 'male' | 'female'
-  hairStyle: number      
-  accessory: 'none' | 'glasses' | 'headphones' | 'hat'
-  beard: boolean         
+export async function compositeAvatar(
+  canvas: HTMLCanvasElement,
+  layers: string[],
+  colorMap: ColorMap,
+  bgColor: string,
+  displaySize: number
+): Promise<void> {
+  canvas.width = displaySize
+  canvas.height = displaySize
+  const ctx = canvas.getContext('2d')!
+  ctx.imageSmoothingEnabled = false
+
+  ctx.fillStyle = bgColor
+  ctx.fillRect(0, 0, displaySize, displaySize)
+
+  const off = document.createElement('canvas')
+  off.width = displaySize; off.height = displaySize
+  const offCtx = off.getContext('2d')!
+
+  for (const src of layers) {
+    if (!src) continue
+    try {
+      const img = await loadImage(src)
+      offCtx.clearRect(0, 0, displaySize, displaySize)
+      offCtx.imageSmoothingEnabled = false
+      offCtx.drawImage(img, 0, 0, displaySize, displaySize)
+
+      const imageData = offCtx.getImageData(0, 0, displaySize, displaySize)
+      const data = imageData.data
+
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] < 30) continue
+        const zone = detectZone(data[i], data[i+1], data[i+2])
+        if (zone) {
+          const [nr, ng, nb] = recolorPixel(data[i], data[i+1], data[i+2], zone, colorMap)
+          data[i] = nr; data[i+1] = ng; data[i+2] = nb
+        }
+      }
+
+      offCtx.putImageData(imageData, 0, 0)
+      ctx.drawImage(off, 0, 0)
+    } catch { /* skip missing layer */ }
+  }
 }
 
-export function buildSpritePaths(opts: SpriteOptions): string[] {
-  const base = `/avatars/${opts.gender}`
-  const hairNames = opts.gender === 'male'
-    ? ['hair-short', 'hair-medium', 'hair-swept']
-    : ['hair-bob', 'hair-long']
-  const hair = hairNames[Math.min(opts.hairStyle, hairNames.length - 1)]
+const MALE_HAIR   = ['hair-short', 'hair-medium', 'hair-swept']
+const FEMALE_HAIR = ['hair-bob', 'hair-long']
+
+export function buildLayers(spec: AvatarSpec): string[] {
+  const base = `/avatars/${spec.gender}`
+  const hairFiles = spec.gender === 'male' ? MALE_HAIR : FEMALE_HAIR
+  const hair = hairFiles[Math.min(spec.hairStyle, hairFiles.length - 1)]
 
   const layers: string[] = [
-    `${base}/body.png`,                           
-    `${base}/face.png`,                          
-    `${base}/${hair}.png`,                         
+    `${base}/body.png`,
+    `${base}/face.png`,
+    `${base}/${hair}.png`,
   ]
 
-  if (opts.beard && opts.gender === 'male') {
-    layers.push(`${base}/beard.png`)
-  }
-
-  if (opts.accessory !== 'none') {
-    layers.push(`${base}/${opts.accessory}.png`)
-  }
+  if (spec.beard && spec.gender === 'male') layers.push(`${base}/beard.png`)
+  if (spec.accessory !== 'none') layers.push(`${base}/${spec.accessory}.png`)
 
   return layers
 }
